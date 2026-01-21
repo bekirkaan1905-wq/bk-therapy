@@ -52,8 +52,8 @@ def generate_invoice_pdf(
     payment: dict,
 ):
     # ========= EINSTELLUNGEN (HIER KANNST DU ABSTAND STEUERN) =========
-    LOGO_W = 55 * mm
-    LOGO_H = 30 * mm
+    LOGO_W = 85 * mm
+    LOGO_H = 60 * mm
 
     # Zahlblock-Abstand: mehr = weiter nach unten (mehr Luft)
     GAP_AFTER_TOTAL = 12 * mm          # Abstand nach "Gesamt"
@@ -191,7 +191,7 @@ def generate_invoice_pdf(
             "Hinweis: Gemäß § 19 UStG (Kleinunternehmerregelung) wird keine Umsatzsteuer ausgewiesen.",
         )
         # Mehr Abstand nach Hinweis (das wolltest du)
-        y -= GAP_AFTER_NOTE
+        y -= GAP_AFTER_TOTAL = 12 * mm
     else:
         # Falls Hinweis aus ist, trotzdem etwas Luft
         y -= 6 * mm
