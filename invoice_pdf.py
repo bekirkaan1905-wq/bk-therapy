@@ -21,22 +21,46 @@ def _safe_float(x, default=0.0) -> float:
         return float(default)
 
 
-def _draw_table_header(c: canvas.Canvas, table_left: float, table_right: float, y: float) -> float:
+def _draw_table_header_and_grid(
+    c: canvas.Canvas,
+    table_left: float,
+    table_right: float,
+    y: float,
+    col_qty_x: float,
+    col_unit_x: float,
+    col_amt_x: float,
+    grid_bottom_y: float,
+) -> float:
+    """
+    Zeichnet Kopf + horizontale Linien + vertikale Spaltenlinien (Grid).
+    Gibt neues y zurück (Startposition für erste Tabellenzeile).
+    """
+    # Oberer Strich
     c.setStrokeColor(colors.black)
     c.setLineWidth(1)
     c.line(table_left, y, table_right, y)
 
+    # Vertikale Linien (von Kopfbereich bis grid_bottom_y)
+    # Spalten: Leistung | Menge | Einzelpreis | Betrag
+    c.setLineWidth(0.5)
+    c.line(col_qty_x, y, col_qty_x, grid_bottom_y)
+    c.line(col_unit_x, y, col_unit_x, grid_bottom_y)
+    c.line(col_amt_x, y, col_amt_x, grid_bottom_y)
+
+    # Header-Text
     y -= 7 * mm
     c.setFont("Helvetica-Bold", 10)
     c.drawString(table_left, y, "Leistung")
-    c.drawRightString(table_right - 60 * mm, y, "Menge")
-    c.drawRightString(table_right - 30 * mm, y, "Einzelpreis")
-    c.drawRightString(table_right, y, "Betrag")
+    c.drawRightString(col_unit_x - 5 * mm, y, "Menge")          # rechts in die Menge-Spalte
+    c.drawRightString(col_amt_x - 5 * mm, y, "Einzelpreis")      # rechts in die Einzelpreis-Spalte
+    c.drawRightString(table_right, y, "Betrag")                  # ganz rechts
 
+    # Trennlinie unter Header
     y -= 4 * mm
     c.setLineWidth(0.5)
     c.line(table_left, y, table_right, y)
 
+    # Start y für Content
     y -= 7 * mm
     c.setFont("Helvetica", 10)
     return y
@@ -51,18 +75,28 @@ def generate_invoice_pdf(
     items: list,
     payment: dict,
 ):
-    # ========= EINSTELLUNGEN (HIER KANNST DU ABSTAND STEUERN) =========
+    # ========= EINSTELLUNGEN =========
     LOGO_W = 80 * mm
     LOGO_H = 50 * mm
 
-    # Zahlblock-Abstand: mehr = weiter nach unten (mehr Luft)
-    GAP_AFTER_TOTAL = 12 * mm          # Abstand nach "Gesamt"
-    GAP_AFTER_NOTE = 15 * mm           # Abstand nach dem Hinweis (das wolltest du größer)
-    LINE_GAP_PAYMENT = 8 * mm          # Zeilenabstand im Zahlungsblock
+    GAP_AFTER_TOTAL = 12 * mm
+    GAP_AFTER_NOTE = 15 * mm
+    LINE_GAP_PAYMENT = 6 * mm  # <- wenn du die Zeilen unten links näher willst: 5-6mm
 
-    # WICHTIG: Zahlungsziel FEST auf 14 Tage (statt 7)
     FIXED_DUE_DAYS = 14
-    # =================================================================
+
+    # Default-Positionen (Vorlage), falls items leer ist:
+    DEFAULT_ITEMS = [
+        {"description": "Behandlung (60 Minuten)", "qty": 1, "unit_price": 0},
+        # Du kannst mehr Vorlagen hinzufügen:
+        # {"description": "Behandlung (30 Minuten)", "qty": 1, "unit_price": 0},
+    ]
+    # ================================
+
+    # Datum automatisch heute
+    today = datetime.today().strftime("%d.%m.%Y")
+    invoice["date"] = today
+    invoice["service_date"] = today
 
     c = canvas.Canvas(output_pdf_path, pagesize=A4)
     width, height = A4
@@ -74,7 +108,7 @@ def generate_invoice_pdf(
 
     y_top = height - 20 * mm
 
-    # Logo oben links (größer)
+    # Logo oben links
     if logo_path and os.path.exists(logo_path):
         try:
             img = ImageReader(logo_path)
@@ -111,7 +145,7 @@ def generate_invoice_pdf(
         c.drawRightString(right_x, yy, f"St-Nr.: {issuer.get('tax_number')}")
         yy -= 4 * mm
 
-    # Abstand nach Kopf (wegen Logo)
+    # Abstand nach Kopf
     y = y_top - (LOGO_H + 15 * mm)
 
     # Titel
@@ -139,9 +173,32 @@ def generate_invoice_pdf(
         c.drawString(margin_x, y, str(line))
         y -= 4 * mm
 
-    # Tabelle
+    # Tabelle – Spaltenpositionen
     y -= 10 * mm
-    y = _draw_table_header(c, table_left, table_right, y)
+
+    # x-Positionen für Spaltentrenner (du kannst die Zahlen später feinjustieren)
+    col_qty_x = table_right - 60 * mm   # Grenze zwischen Leistung und Menge
+    col_unit_x = table_right - 30 * mm  # Grenze zwischen Menge und Einzelpreis
+    col_amt_x = table_right - 0 * mm    # Grenze zwischen Einzelpreis und Betrag (Betrag ist ganz rechts)
+    # Für Betrag brauchen wir keine extra Grenze am rechten Rand, der ist table_right.
+
+    # Unterkante für Grid auf jeder Seite
+    grid_bottom_y = 55 * mm
+
+    y = _draw_table_header_and_grid(
+        c=c,
+        table_left=table_left,
+        table_right=table_right,
+        y=y,
+        col_qty_x=col_qty_x,
+        col_unit_x=col_unit_x,
+        col_amt_x=table_right - 0 * mm,
+        grid_bottom_y=grid_bottom_y,
+    )
+
+    # Wenn items leer ist -> Vorlage benutzen
+    if not items:
+        items = DEFAULT_ITEMS
 
     total = 0.0
 
@@ -156,17 +213,33 @@ def generate_invoice_pdf(
 
         first_line = True
         for wline in wrapped:
-            if y < 55 * mm:
+            if y < grid_bottom_y:
                 c.showPage()
-                y = height - 20 * mm
-                y = _draw_table_header(c, table_left, table_right, y)
+                y_top2 = height - 20 * mm
+                y = y_top2
 
+                # Tabelle neu starten inkl. Grid-Linien
+                y = _draw_table_header_and_grid(
+                    c=c,
+                    table_left=table_left,
+                    table_right=table_right,
+                    y=y,
+                    col_qty_x=col_qty_x,
+                    col_unit_x=col_unit_x,
+                    col_amt_x=table_right - 0 * mm,
+                    grid_bottom_y=grid_bottom_y,
+                )
+
+            # Leistung
             c.drawString(table_left, y, wline)
 
             if first_line:
                 qty_str = str(int(qty)) if qty % 1 == 0 else str(qty).rstrip("0").rstrip(".")
-                c.drawRightString(table_right - 60 * mm, y, qty_str)
-                c.drawRightString(table_right - 30 * mm, y, euro(unit))
+                # Menge rechtsbündig innerhalb der Menge-Spalte
+                c.drawRightString(col_unit_x - 5 * mm, y, qty_str)
+                # Einzelpreis rechtsbündig innerhalb der Einzelpreis-Spalte
+                c.drawRightString(table_right - 5 * mm - 30 * mm, y, euro(unit))
+                # Betrag ganz rechts
                 c.drawRightString(table_right, y, euro(line_total))
                 first_line = False
 
@@ -178,10 +251,9 @@ def generate_invoice_pdf(
     c.drawRightString(table_right - 30 * mm, y, "Gesamt:")
     c.drawRightString(table_right, y, euro(total))
 
-    # Mehr Abstand nach Gesamt
     y -= GAP_AFTER_TOTAL
 
-    # Hinweis (nicht "steuerfrei")
+    # Hinweis
     show_vat_note = invoice.get("show_vat_note", True)
     if show_vat_note:
         c.setFont("Helvetica", 9)
@@ -190,28 +262,21 @@ def generate_invoice_pdf(
             y,
             "Hinweis: Gemäß § 19 UStG (Kleinunternehmerregelung) wird keine Umsatzsteuer ausgewiesen.",
         )
-        # Mehr Abstand nach Hinweis (das wolltest du)
         y -= GAP_AFTER_NOTE
     else:
-        # Falls Hinweis aus ist, trotzdem etwas Luft
         y -= 6 * mm
 
-    # Datum robust
-    try:
-        invoice_date = datetime.strptime(invoice.get("date", ""), "%d.%m.%Y")
-    except ValueError:
-        invoice_date = datetime.today()
-
-    # HIER: FEST 14 TAGE
+    # Fälligkeitsdatum (14 Tage fest)
+    invoice_date = datetime.strptime(invoice.get("date", ""), "%d.%m.%Y")
     due_days = FIXED_DUE_DAYS
     due_date = invoice_date + timedelta(days=due_days)
 
-    # Zahlungsinfos (unten links) mit mehr Luft/Zeilenabstand
+    # Zahlungsinfos (unten links)
     c.setFont("Helvetica", 9)
     c.drawString(table_left, y, f"Zahlungsziel: {due_days} Tage")
     y -= LINE_GAP_PAYMENT
     c.drawString(table_left, y, f"Fällig am: {due_date.strftime('%d.%m.%Y')}")
-    y -= (LINE_GAP_PAYMENT + 1 * mm)
+    y -= LINE_GAP_PAYMENT
 
     c.drawString(table_left, y, f"Kontoinhaber: {payment.get('account_holder','')}")
     y -= LINE_GAP_PAYMENT
