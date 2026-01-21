@@ -9,14 +9,12 @@ import textwrap
 
 
 def euro(amount: float) -> str:
-    """Format: 1.234,56 €"""
     s = f"{amount:,.2f}"
     s = s.replace(",", "X").replace(".", ",").replace("X", ".")
     return f"{s} €"
 
 
 def _safe_float(x, default=0.0) -> float:
-    """Zahlen robust lesen (auch '1,5')."""
     try:
         return float(str(x).replace(",", "."))
     except Exception:
@@ -24,7 +22,6 @@ def _safe_float(x, default=0.0) -> float:
 
 
 def _draw_table_header(c: canvas.Canvas, table_left: float, table_right: float, y: float) -> float:
-    """Tabellenkopf + Linie zeichnen, neues y zurückgeben."""
     c.setStrokeColor(colors.black)
     c.setLineWidth(1)
     c.line(table_left, y, table_right, y)
@@ -54,15 +51,19 @@ def generate_invoice_pdf(
     items: list,
     payment: dict,
 ):
-    """
-    Erwartete Struktur (kurz):
-      issuer: {"name":..., "address_lines":[...], "phone":..., "email":..., "tax_number":...}
-      client: {"name":..., "address_lines":[...]}
-      invoice: {"title":..., "number":..., "date":"TT.MM.JJJJ", "service_date":"TT.MM.JJJJ",
-                "show_vat_note": True/False}
-      items: [{"description":..., "qty":..., "unit_price":...}, ...]
-      payment: {"due_days":14, "account_holder":..., "iban":..., "bic":...}
-    """
+    # ========= EINSTELLUNGEN (HIER KANNST DU ABSTAND STEUERN) =========
+    LOGO_W = 55 * mm
+    LOGO_H = 30 * mm
+
+    # Zahlblock-Abstand: mehr = weiter nach unten (mehr Luft)
+    GAP_AFTER_TOTAL = 12 * mm          # Abstand nach "Gesamt"
+    GAP_AFTER_NOTE = 10 * mm           # Abstand nach dem Hinweis (das wolltest du größer)
+    LINE_GAP_PAYMENT = 6 * mm          # Zeilenabstand im Zahlungsblock
+
+    # WICHTIG: Zahlungsziel FEST auf 14 Tage (statt 7)
+    FIXED_DUE_DAYS = 14
+    # =================================================================
+
     c = canvas.Canvas(output_pdf_path, pagesize=A4)
     width, height = A4
 
@@ -71,21 +72,16 @@ def generate_invoice_pdf(
     table_right = width - margin_x
     right_x = width - margin_x
 
-    # Logo größer als vorher
-    LOGO_W = 55 * mm
-    LOGO_H = 30 * mm
-
-    # Start-Y
     y_top = height - 20 * mm
 
-    # Logo oben links (optional)
+    # Logo oben links (größer)
     if logo_path and os.path.exists(logo_path):
         try:
             img = ImageReader(logo_path)
             c.drawImage(
                 img,
                 margin_x,
-                y_top - LOGO_H,          # oben links
+                y_top - LOGO_H,
                 width=LOGO_W,
                 height=LOGO_H,
                 mask="auto",
@@ -95,7 +91,7 @@ def generate_invoice_pdf(
         except Exception:
             pass
 
-    # Aussteller (rechts oben)
+    # Aussteller rechts
     c.setFont("Helvetica-Bold", 12)
     c.drawRightString(right_x, y_top, issuer.get("name", ""))
 
@@ -115,13 +111,14 @@ def generate_invoice_pdf(
         c.drawRightString(right_x, yy, f"St-Nr.: {issuer.get('tax_number')}")
         yy -= 4 * mm
 
-    # Genug Abstand nach dem Kopfbereich (wegen größerem Logo)
+    # Abstand nach Kopf (wegen Logo)
     y = y_top - 48 * mm
 
-    # Titel + Rechnungsdaten
+    # Titel
     c.setFont("Helvetica-Bold", 18)
     c.drawString(margin_x, y, invoice.get("title", "Rechnung"))
 
+    # Rechnungsdaten
     y -= 10 * mm
     c.setFont("Helvetica", 10)
     c.drawString(margin_x, y, f"Rechnungsnummer: {invoice.get('number','')}")
@@ -159,7 +156,6 @@ def generate_invoice_pdf(
 
         first_line = True
         for wline in wrapped:
-            # Seitenumbruch + Tabellenkopf neu
             if y < 55 * mm:
                 c.showPage()
                 y = height - 20 * mm
@@ -168,11 +164,7 @@ def generate_invoice_pdf(
             c.drawString(table_left, y, wline)
 
             if first_line:
-                # Menge hübscher: 1 statt 1.0
-                if qty % 1 == 0:
-                    qty_str = str(int(qty))
-                else:
-                    qty_str = str(qty).rstrip("0").rstrip(".")
+                qty_str = str(int(qty)) if qty % 1 == 0 else str(qty).rstrip("0").rstrip(".")
                 c.drawRightString(table_right - 60 * mm, y, qty_str)
                 c.drawRightString(table_right - 30 * mm, y, euro(unit))
                 c.drawRightString(table_right, y, euro(line_total))
@@ -180,45 +172,52 @@ def generate_invoice_pdf(
 
             y -= 6 * mm
 
-    # Gesamt (kommt VOR dem Hinweis)
+    # Gesamt
     y -= 10 * mm
     c.setFont("Helvetica-Bold", 11)
     c.drawRightString(table_right - 30 * mm, y, "Gesamt:")
     c.drawRightString(table_right, y, euro(total))
 
-    # Hinweis (nicht "steuerfrei", sondern: keine USt ausgewiesen)
+    # Mehr Abstand nach Gesamt
+    y -= GAP_AFTER_TOTAL
+
+    # Hinweis (nicht "steuerfrei")
     show_vat_note = invoice.get("show_vat_note", True)
     if show_vat_note:
-        y -= 12 * mm
         c.setFont("Helvetica", 9)
         c.drawString(
             table_left,
             y,
             "Hinweis: Gemäß § 19 UStG (Kleinunternehmerregelung) wird keine Umsatzsteuer ausgewiesen.",
         )
-        y -= 5 * mm
+        # Mehr Abstand nach Hinweis (das wolltest du)
+        y -= GAP_AFTER_NOTE
+    else:
+        # Falls Hinweis aus ist, trotzdem etwas Luft
+        y -= 6 * mm
 
-    # Fälligkeitsdatum robust berechnen
+    # Datum robust
     try:
         invoice_date = datetime.strptime(invoice.get("date", ""), "%d.%m.%Y")
     except ValueError:
         invoice_date = datetime.today()
 
-    due_days = int(_safe_float(payment.get("due_days", 14), default=14))
+    # HIER: FEST 14 TAGE
+    due_days = FIXED_DUE_DAYS
     due_date = invoice_date + timedelta(days=due_days)
 
-    # Zahlungsinfos
+    # Zahlungsinfos (unten links) mit mehr Luft/Zeilenabstand
     c.setFont("Helvetica", 9)
     c.drawString(table_left, y, f"Zahlungsziel: {due_days} Tage")
-    y -= 5 * mm
+    y -= LINE_GAP_PAYMENT
     c.drawString(table_left, y, f"Fällig am: {due_date.strftime('%d.%m.%Y')}")
-    y -= 6 * mm
+    y -= (LINE_GAP_PAYMENT + 1 * mm)
 
     c.drawString(table_left, y, f"Kontoinhaber: {payment.get('account_holder','')}")
-    y -= 5 * mm
+    y -= LINE_GAP_PAYMENT
     c.drawString(table_left, y, f"IBAN: {payment.get('iban','')}")
     if payment.get("bic"):
-        y -= 5 * mm
+        y -= LINE_GAP_PAYMENT
         c.drawString(table_left, y, f"BIC: {payment.get('bic','')}")
 
     c.save()
