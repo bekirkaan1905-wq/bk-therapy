@@ -52,13 +52,13 @@ def generate_invoice_pdf(
     payment: dict,
 ):
     # ========= EINSTELLUNGEN (HIER KANNST DU ABSTAND STEUERN) =========
-    LOGO_W = 85 * mm
-    LOGO_H = 60 * mm
+    LOGO_W = 80 * mm
+    LOGO_H = 50 * mm
 
     # Zahlblock-Abstand: mehr = weiter nach unten (mehr Luft)
     GAP_AFTER_TOTAL = 12 * mm          # Abstand nach "Gesamt"
-    GAP_AFTER_NOTE = 10 * mm           # Abstand nach dem Hinweis (das wolltest du größer)
-    LINE_GAP_PAYMENT = 6 * mm          # Zeilenabstand im Zahlungsblock
+    GAP_AFTER_NOTE = 15 * mm           # Abstand nach dem Hinweis (das wolltest du größer)
+    LINE_GAP_PAYMENT = 8 * mm          # Zeilenabstand im Zahlungsblock
 
     # WICHTIG: Zahlungsziel FEST auf 14 Tage (statt 7)
     FIXED_DUE_DAYS = 14
@@ -112,7 +112,7 @@ def generate_invoice_pdf(
         yy -= 4 * mm
 
     # Abstand nach Kopf (wegen Logo)
-    y = y_top - 48 * mm
+    y = y_top - (LOGO_H + 15 * mm)
 
     # Titel
     c.setFont("Helvetica-Bold", 18)
@@ -191,7 +191,7 @@ def generate_invoice_pdf(
             "Hinweis: Gemäß § 19 UStG (Kleinunternehmerregelung) wird keine Umsatzsteuer ausgewiesen.",
         )
         # Mehr Abstand nach Hinweis (das wolltest du)
-        y -= GAP_AFTER_TOTAL = 12 * mm
+        y -= GAP_AFTER_NOTE
     else:
         # Falls Hinweis aus ist, trotzdem etwas Luft
         y -= 6 * mm
