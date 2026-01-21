@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
@@ -124,10 +125,13 @@ def generate_invoice_pdf(output_pdf_path: str, logo_path: str, issuer: dict, cli
         "Hinweis: Gemäß § 19 UStG (Kleinunternehmerregelung) wird keine Umsatzsteuer berechnet."
     )
 
-    y -= 12*mm
-    c.setFont("Helvetica", 10)
-    due_days = payment.get("due_days", 7)
+    invoice_date = datetime.strptime(data["invoice_date"], "%d.%m.%Y")
+    due_days = payment.get("due_days", 14)
+    due_date = invoice_date + timedelta(days=due_days)
+
     c.drawString(table_left, y, f"Zahlungsziel: {due_days} Tage")
+    y -= 5*mm
+    c.drawString(table_left, y, f"Fällig am: {due_date.strftime('%d.%m.%Y')}")
     y -= 6*mm
     c.drawString(table_left, y, f"Kontoinhaber: {payment.get('account_holder','')}")
     y -= 5*mm
